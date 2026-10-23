@@ -3,6 +3,8 @@
 An endless runner starring **Rocky**, a red toy poodle. Jump over rocks, grab bones, keep your 3 hearts, beat your best score.
 Built with Flutter for **Android**, **Web** and **Windows**. Created by Jovita.
 
+🎮 **Play online:** https://rockyrunwafel.netlify.app
+
 ![Gameplay](docs/images/gameplay.png)
 
 ## Features
