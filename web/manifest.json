@@ -2,11 +2,11 @@
     "name": "Rocky Run",
     "short_name": "Rocky Run",
     "start_url": ".",
-    "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
-    "orientation": "portrait-primary",
+    "display": "fullscreen",
+    "background_color": "#3A1C14",
+    "theme_color": "#3A1C14",
+    "description": "Rocky Run: help Rocky the red toy poodle dodge the rocks. Created by Jovita.",
+    "orientation": "any",
     "prefer_related_applications": false,
     "icons": [
         {

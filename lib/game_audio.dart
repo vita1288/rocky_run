@@ -89,6 +89,23 @@ class GameAudio {
     }
   }
 
+  bool _webUnlocked = false;
+
+  /// iOS Safari only lets a sound start inside a tap. Call this from the
+  /// LET'S RUN! tap: every sound effect is played once silently, so later
+  /// jump / bone sounds (triggered mid-run) are allowed to play.
+  void unlockWeb() {
+    if (!kIsWeb || _webUnlocked || muted || !sfxOn) return;
+    _webUnlocked = true;
+    for (final e in _sfx.entries) {
+      final p = e.value;
+      p
+          .play(AssetSource('audio/${e.key}.wav'), volume: 0)
+          .then((_) => p.stop())
+          .catchError((_) {});
+    }
+  }
+
   Future<void> play(String name, {double volume = 1.0}) async {
     if (muted || !sfxOn) return;
     final p = _sfx[name];

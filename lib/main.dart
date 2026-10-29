@@ -59,6 +59,10 @@ class _GameScreenState extends State<GameScreen>
   final GameAudio _audio = GameAudio();
   final FocusNode _focus = FocusNode();
   late final Ticker _ticker;
+  final ValueNotifier<int> _frame = ValueNotifier(0); // repaints the world
+  Object? _hudKey; // what the score bar / cards last showed
+  double _sinceHud = 0;
+  Size? _screen; // last screen size applied to the world
   Duration _last = Duration.zero;
   SharedPreferences? _prefs;
   bool _pageOpen = false; // a How to Play / Settings page is on top
@@ -95,6 +99,7 @@ class _GameScreenState extends State<GameScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _ticker.dispose();
+    _frame.dispose();
     _audio.dispose();
     _focus.dispose();
     super.dispose();
@@ -135,10 +140,50 @@ class _GameScreenState extends State<GameScreen>
   void _tick(Duration elapsed) {
     var dt = (elapsed - _last).inMicroseconds / 1e6;
     _last = elapsed;
-    if (dt > 0.05) dt = 0.05; // avoid huge steps after a hitch
+    // Allow steps up to 1/15 s so slower devices (e.g. iPhone Safari) keep
+    // real-time speed instead of slowing down; longer hitches are capped.
+    if (dt > 1 / 15) dt = 1 / 15;
     if (dt <= 0) return;
     _game.update(dt);
-    setState(() {});
+    _frame.value++; // redraw the game world only (cheap)
+
+    // Rebuild the widgets (score bar, title / game-over cards) only when what
+    // they show changes, and the running score at most 10 times a second.
+    _sinceHud += dt;
+    final hud = (
+      _game.state,
+      _game.lives,
+      _game.bonesCollected,
+      _game.highScore,
+      _game.overTime > 0.7,
+    );
+    if (hud != _hudKey || _sinceHud >= 0.1) {
+      _hudKey = hud;
+      _sinceHud = 0;
+      setState(() {});
+    }
+  }
+
+  /// Applies the screen size to the game world.
+  /// iOS Safari grows / shrinks the page height while its address bar hides or
+  /// shows. Mid-run that would move the ground under Rocky, so height-only
+  /// changes are ignored during a run (rotation / width changes still apply).
+  void _fitWorld(double w, double h) {
+    final prev = _screen;
+    if (prev != null) {
+      final sameWidth = (prev.width - w).abs() < 1;
+      final sameHeight = (prev.height - h).abs() < 1;
+      if (sameWidth && sameHeight) return;
+      final addressBarOnly =
+          sameWidth && (prev.height - h).abs() < prev.height * 0.25;
+      if (addressBarOnly && _game.state == GameState.playing) return;
+    }
+    _screen = Size(w, h);
+    // Keep at least 640 world units of width so rocks are visible early,
+    // even on a narrow portrait phone (the world just zooms out).
+    final scale = (w / 640).clamp(0.05, 1.0);
+    _game.viewScale = scale;
+    _game.size = Size(w / scale, h / scale);
   }
 
   void _handleGameOver() {
@@ -150,6 +195,7 @@ class _GameScreenState extends State<GameScreen>
   void _startRun() {
     if (_game.state == GameState.playing) return;
     final firstRun = _game.state == GameState.ready;
+    _audio.unlockWeb(); // iPhone Safari: allow sound effects during the run
     _game.start();
     _audio.play('bark');
     firstRun ? _audio.startBgm() : _audio.restartBgm();
@@ -278,11 +324,7 @@ class _GameScreenState extends State<GameScreen>
         autofocus: true,
         onKeyEvent: _onKey,
         child: LayoutBuilder(builder: (context, c) {
-          // Keep at least 640 world units of width so rocks are visible early,
-          // even on a narrow portrait phone (the world just zooms out).
-          final scale = (c.maxWidth / 640).clamp(0.05, 1.0);
-          _game.viewScale = scale;
-          _game.size = Size(c.maxWidth / scale, c.maxHeight / scale);
+          _fitWorld(c.maxWidth, c.maxHeight);
           return Stack(
             fit: StackFit.expand,
             children: [
@@ -290,7 +332,10 @@ class _GameScreenState extends State<GameScreen>
                 behavior: HitTestBehavior.opaque,
                 onPointerDown: (_) => _press(),
                 onPointerUp: (_) => _release(),
-                child: CustomPaint(painter: GamePainter(_game)),
+                // iOS can cancel a touch (e.g. a system gesture); treat it as
+                // a release so a held high jump never gets stuck.
+                onPointerCancel: (_) => _release(),
+                child: CustomPaint(painter: GamePainter(_game, repaint: _frame)),
               ),
               IgnorePointer(child: _scoreBar(playing)),
               if (!playing)

@@ -7,7 +7,8 @@ import 'game.dart';
 
 
 class GamePainter extends CustomPainter {
-  GamePainter(this.game);
+  /// [repaint] lets the game redraw every frame without rebuilding widgets.
+  GamePainter(this.game, {Listenable? repaint}) : super(repaint: repaint);
   final RockyRunGame game;
 
   @override
@@ -131,7 +132,9 @@ class GamePainter extends CustomPainter {
   }
 
   void _ground(Canvas c, Size s, double gy, double scroll) {
-    c.drawRect(Rect.fromLTWH(0, gy, s.width, s.height - gy),
+    // Extends far below the world so a taller screen (e.g. Safari's address
+    // bar hiding mid-run) never shows an empty strip under the ground.
+    c.drawRect(Rect.fromLTWH(0, gy, s.width, s.height - gy + 2000),
         Paint()..color = const Color(0xFFD9A066));
     c.drawRect(Rect.fromLTWH(0, gy, s.width, 9),
         Paint()..color = const Color(0xFF6DB353));
@@ -273,6 +276,18 @@ class PoodleDrawer {
   static const _eye = Color(0xFF1A0D0A);
   static const _mouth = Color(0xFF3A0D08);
 
+  // ---- frame cache --------------------------------------------------------
+  // Rocky is ~30 shaded fur shapes. Drawing them every frame is slow on iOS
+  // Safari, so each animation frame is drawn ONCE into an image and reused.
+  // Running = 16 frames, idle = 24 frames (2.4 s loop), jump + crash = 1 each.
+
+  static const int _runFrames = 16;
+  static const int _idleFrames = 24;
+  static const double _idleLoop = 2.4; // seconds
+  static const double _px = 3; // image pixels per sprite unit (sharp on phones)
+  static const Rect _bounds = Rect.fromLTWH(-14, -112, 130, 124);
+  static final Map<String, ui.Image> _frames = {};
+
   static void draw(
     Canvas c, {
     required double phase,
@@ -282,16 +297,66 @@ class PoodleDrawer {
     required bool idle,
     required double time,
   }) {
+    late final String key;
+    late final void Function(Canvas) paintFrame;
+    if (running) {
+      final f = ((phase % (2 * pi)) / (2 * pi) * _runFrames).floor() % _runFrames;
+      final ph = f * 2 * pi / _runFrames;
+      key = 'run$f';
+      paintFrame = (k) => _drawPose(k,
+          phase: ph, running: true, airborne: false, dead: false,
+          bob: -sin(ph).abs() * 3, wag: sin(ph * 2) * 4, blink: false);
+    } else if (idle) {
+      final f = ((time % _idleLoop) / _idleLoop * _idleFrames).floor() % _idleFrames;
+      final t = f * _idleLoop / _idleFrames;
+      key = 'idle$f';
+      paintFrame = (k) => _drawPose(k,
+          phase: 0, running: false, airborne: false, dead: false,
+          bob: sin(t * 2 * pi / _idleLoop) * 1.2,
+          wag: sin(t * 2 * pi / 0.4) * 4,
+          blink: t >= 2.2 && t < 2.34);
+    } else {
+      key = airborne ? 'air' : (dead ? 'dead' : 'stand');
+      paintFrame = (k) => _drawPose(k,
+          phase: 0, running: false, airborne: airborne, dead: dead,
+          bob: 0, wag: 0, blink: false);
+    }
+
+    var img = _frames[key];
+    if (img == null) {
+      final rec = ui.PictureRecorder();
+      final k = Canvas(rec);
+      k.scale(_px);
+      k.translate(-_bounds.left, -_bounds.top);
+      paintFrame(k);
+      final pic = rec.endRecording();
+      img = pic.toImageSync(
+          (_bounds.width * _px).ceil(), (_bounds.height * _px).ceil());
+      pic.dispose();
+      _frames[key] = img;
+    }
+    c.drawImageRect(
+      img,
+      Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+      _bounds,
+      Paint()..filterQuality = FilterQuality.medium,
+    );
+  }
+
+  static void _drawPose(
+    Canvas c, {
+    required double phase,
+    required bool running,
+    required bool airborne,
+    required bool dead,
+    required double bob,
+    required double wag,
+    required bool blink,
+  }) {
     final sA = running ? sin(phase) : 0.0;
     final sB = running ? sin(phase + pi) : 0.0;
     final lA = running ? max(0.0, cos(phase)) * 4 : 0.0;
     final lB = running ? max(0.0, cos(phase + pi)) * 4 : 0.0;
-    final bob = running
-        ? -sin(phase).abs() * 3
-        : idle
-            ? sin(time * 3) * 1.2
-            : 0.0;
-    final wag = (running || idle) ? sin(time * 14) * 4 : 0.0;
     final earFlap = airborne ? -6.0 : (running ? sin(phase) * 2 : 0.0);
 
     // back legs
@@ -350,7 +415,6 @@ class PoodleDrawer {
     _oval(c, 79, -53, 4.8, 3, const Color(0x73FF788C));
 
     // eye
-    final blink = idle && (time % 3.2) < 0.14;
     if (dead) {
       final x = _stroke(_eye, 2.4);
       c.drawLine(const Offset(71, -69), const Offset(78, -62), x);
