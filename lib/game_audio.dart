@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 
+import 'web_sfx.dart';
+
 /// Sound effects + looping background music.
 class GameAudio {
   static const _sfxNames = [
@@ -68,6 +70,10 @@ class GameAudio {
       // On the web a browser may hold back a download until the first tap;
       // loading one file must never block the others, and play() must work
       // even if a file has not finished loading yet.
+      // Web: decode all sound effects into memory for instant playback.
+      // (HTML <audio> takes ~0.2 s to start on iPhone Safari and froze the
+      // game on every jump / bone.)
+      if (kIsWeb) webSfxLoad(_sfxNames);
       final loads = <Future<void>>[_load(_bgm, 'bgm')];
       for (final name in _sfxNames) {
         final p = AudioPlayer(playerId: 'sfx_$name');
@@ -100,6 +106,7 @@ class GameAudio {
   /// jump / bone sounds (triggered mid-run) are allowed to play.
   void unlockWeb() {
     if (!kIsWeb || _webUnlocked || muted || !sfxOn) return;
+    if (webSfxAvailable()) return; // Web Audio unlocks itself on the first tap
     _webUnlocked = true;
     for (final e in _sfx.entries) {
       final p = e.value;
@@ -118,6 +125,7 @@ class GameAudio {
     final p = _sfx[name];
     if (p == null) return;
     final v = (volume * sfxVolume).clamp(0.0, 1.0);
+    if (kIsWeb && webSfxPlay(name, v)) return; // instant, no stutter
     try {
       if (kIsWeb && !_ready.contains(name)) {
         // Not loaded yet (browser held back the preload): load + play once,

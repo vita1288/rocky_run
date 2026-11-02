@@ -61,6 +61,63 @@
       document.addEventListener('contextmenu', stop);          // long-press menu
     })();
   </script>
+  <script>
+    // Rocky Run sound effects via the Web Audio API: each sound is decoded
+    // once into memory and starts instantly. (HTML <audio> takes ~0.2 s to
+    // start on iPhone Safari, which froze the game on every jump / bone.)
+    window.rrSfx = (function () {
+      var ctx = null, buffers = {};
+      function context() {
+        if (!ctx) {
+          var C = window.AudioContext || window.webkitAudioContext;
+          if (!C) return null;
+          ctx = new C();
+        }
+        return ctx;
+      }
+      function unlock() {
+        var c = context();
+        if (!c) return;
+        if (c.state !== 'running') c.resume();
+        // iOS needs one sound started inside a tap to enable audio.
+        var s = c.createBufferSource();
+        s.buffer = c.createBuffer(1, 1, 22050);
+        s.connect(c.destination);
+        s.start(0);
+      }
+      ['touchend', 'pointerdown', 'keydown'].forEach(function (ev) {
+        document.addEventListener(ev, unlock, { passive: true });
+      });
+      function load(list) {
+        var c = context();
+        if (!c) return;
+        list.split(',').forEach(function (name) {
+          if (buffers[name]) return;
+          fetch('assets/assets/audio/' + name + '.wav')
+            .then(function (r) { return r.arrayBuffer(); })
+            .then(function (data) {
+              return new Promise(function (ok, fail) { c.decodeAudioData(data, ok, fail); });
+            })
+            .then(function (buf) { buffers[name] = buf; })
+            .catch(function () {});
+        });
+      }
+      function play(name, volume) {
+        var c = context();
+        if (!c || !buffers[name]) return false;
+        if (c.state !== 'running') c.resume();
+        var src = c.createBufferSource();
+        src.buffer = buffers[name];
+        var gain = c.createGain();
+        gain.gain.value = volume;
+        src.connect(gain);
+        gain.connect(c.destination);
+        src.start(0);
+        return true;
+      }
+      return { load: load, play: play };
+    })();
+  </script>
 </head>
 <body>
   <script src="flutter_bootstrap.js" async></script>
