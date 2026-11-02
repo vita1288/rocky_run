@@ -288,6 +288,35 @@ class PoodleDrawer {
   static const Rect _bounds = Rect.fromLTWH(-14, -112, 130, 124);
   static final Map<String, ui.Image> _frames = {};
 
+  /// Pre-renders Rocky's animation frames ahead of time, a few per call, so
+  /// no frame is ever created in the middle of a run or a jump (creating one
+  /// on the spot causes a visible hitch on iOS Safari). Returns true when done.
+  static int _warmIndex = 0;
+  static bool warmUpStep({int perCall = 3}) {
+    const total = 3 + _runFrames + _idleFrames;
+    if (_warmIndex >= total) return true;
+    final rec = ui.PictureRecorder();
+    final c = Canvas(rec);
+    for (var n = 0; n < perCall && _warmIndex < total; n++, _warmIndex++) {
+      final i = _warmIndex;
+      if (i < 3) {
+        // most urgent first: jump, crash, standing poses
+        draw(c, phase: 0, running: false, airborne: i == 0, dead: i == 1,
+            idle: false, time: 0);
+      } else if (i < 3 + _runFrames) {
+        final f = i - 3;
+        draw(c, phase: (f + 0.5) * 2 * pi / _runFrames, running: true,
+            airborne: false, dead: false, idle: false, time: 0);
+      } else {
+        final f = i - 3 - _runFrames;
+        draw(c, phase: 0, running: false, airborne: false, dead: false,
+            idle: true, time: (f + 0.5) * _idleLoop / _idleFrames);
+      }
+    }
+    rec.endRecording().dispose();
+    return _warmIndex >= total;
+  }
+
   static void draw(
     Canvas c, {
     required double phase,

@@ -27,6 +27,9 @@ class GameAudio {
   double bgmVolume = 0.5; // 0..1
   double sfxVolume = 0.8; // 0..1
 
+  /// Sound effects whose file is already loaded in their player.
+  final Set<String> _ready = {};
+
   bool get _bgmAllowed => !muted && bgmOn;
 
   /// True while the music is supposed to be playing (a run is in progress).
@@ -84,6 +87,7 @@ class GameAudio {
       await p
           .setSource(AssetSource('audio/$name.wav'))
           .timeout(const Duration(seconds: 8));
+      _ready.add(name);
     } catch (e) {
       debugPrint('Preload of $name skipped: $e'); // play() loads it on demand
     }
@@ -101,7 +105,10 @@ class GameAudio {
       final p = e.value;
       p
           .play(AssetSource('audio/${e.key}.wav'), volume: 0)
-          .then((_) => p.stop())
+          .then((_) {
+            _ready.add(e.key);
+            return p.stop();
+          })
           .catchError((_) {});
     }
   }
@@ -112,13 +119,16 @@ class GameAudio {
     if (p == null) return;
     final v = (volume * sfxVolume).clamp(0.0, 1.0);
     try {
-      await p.stop();
-      if (kIsWeb) {
-        // Web: set the source inside the tap itself, so browsers that blocked
-        // the preload still play it (the file is cached after the first time).
+      if (kIsWeb && !_ready.contains(name)) {
+        // Not loaded yet (browser held back the preload): load + play once,
+        // inside the tap. After this the file stays loaded in the player.
         await p.play(AssetSource('audio/$name.wav'), volume: v);
+        _ready.add(name);
       } else {
+        // Already loaded: just rewind and play. Re-setting the source on
+        // every jump made Safari reload the file and stutter.
         await p.setVolume(v);
+        await p.seek(Duration.zero);
         await p.resume();
       }
     } catch (e) {

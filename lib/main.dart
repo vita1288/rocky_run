@@ -63,6 +63,7 @@ class _GameScreenState extends State<GameScreen>
   Object? _hudKey; // what the score bar / cards last showed
   double _sinceHud = 0;
   Size? _screen; // last screen size applied to the world
+  bool _spritesReady = false;
   Duration _last = Duration.zero;
   SharedPreferences? _prefs;
   bool _pageOpen = false; // a How to Play / Settings page is on top
@@ -145,6 +146,11 @@ class _GameScreenState extends State<GameScreen>
     if (dt > 1 / 15) dt = 1 / 15;
     if (dt <= 0) return;
     _game.update(dt);
+    // While not running (title, How to Play, game over), prepare Rocky's
+    // animation frames a few at a time so jumps never stutter mid-run.
+    if (!_spritesReady && _game.state != GameState.playing) {
+      _spritesReady = PoodleDrawer.warmUpStep();
+    }
     _frame.value++; // redraw the game world only (cheap)
 
     // Rebuild the widgets (score bar, title / game-over cards) only when what
