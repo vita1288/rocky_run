@@ -68,6 +68,17 @@ class _HowToPlayPageState extends State<HowToPlayPage>
         _Rule(ArtIcon(ArtKind.bone, t), tr('Grab bones', 'Ambil tulang'),
             tr('+25 points each. A chime plays every 500 points.',
                 '+25 poin per tulang. Ada bunyi setiap 500 poin.')),
+        _Rule(const Icon(Icons.local_fire_department, size: 34, color: Color(0xFFFF6A3D)),
+            tr('Hard mode at 8000', 'Mode sulit di 8000'),
+            tr('From 8000 points the sky turns orange: faster, closer rocks and rock combos.',
+                'Mulai 8000 poin langit jadi oranye: lebih cepat, batu lebih rapat dan beruntun.')),
+        _Rule(const Icon(Icons.pause_circle_outline, size: 34, color: kPeach),
+            tr('Pause', 'Jeda'),
+            ctl(
+                tr('Esc or leaving the game pauses the run. Tap / Space to continue.',
+                    'Esc atau keluar dari game menjeda permainan. Ketuk / Spasi untuk lanjut.'),
+                tr('Back button or leaving the app pauses the run. Tap to continue.',
+                    'Tombol Kembali atau keluar dari aplikasi menjeda permainan. Ketuk untuk lanjut.'))),
         _Rule(const Icon(Icons.settings, size: 32, color: kPeach),
             tr('Sound & language', 'Suara & bahasa'),
             ctl(
@@ -219,7 +230,7 @@ class _HowToPlayPageState extends State<HowToPlayPage>
                         ),
                       ),
                       const SizedBox(width: 28),
-                      Container(width: 1, height: 340, color: const Color(0x26FFFFFF)),
+                      Container(width: 1, height: 400, color: const Color(0x26FFFFFF)),
                       const SizedBox(width: 28),
                       // right: the rules in two columns
                       Expanded(
