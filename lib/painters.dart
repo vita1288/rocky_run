@@ -270,19 +270,19 @@ class GamePainter extends CustomPainter {
 class PoodleDrawer {
   static const double scale = 0.95;
 
-  // Caramel / apricot toy poodle palette
-  static const _light = Color(0xFFEFC08A);
-  static const _base = Color(0xFFCF8B4E);
-  static const _dark = Color(0xFFA0602F);
-  static const _deep = Color(0xFF74431F);
-  static const _outline = Color(0xFF6A3B1C);
-  static const _muzzle = Color(0xFFE3AE74);
-  static const _muzzleLight = Color(0xFFF6D7AE);
-  static const _earLight = Color(0xFFDDA066);
-  static const _earBase = Color(0xFFBF7B42);
-  static const _earDark = Color(0xFF94592B);
-  static const _eye = Color(0xFF2A1408);
-  static const _mouth = Color(0xFF4A1A0E);
+  // Toy poodle palette (sampled from Jovita's reference illustration)
+  static const _light = Color(0xFFDCA468);
+  static const _base = Color(0xFFC47A3C);
+  static const _dark = Color(0xFFA0582A);
+  static const _deep = Color(0xFF7A3C18);
+  static const _outline = Color(0xFF8A4720);
+  static const _muzzle = Color(0xFFD2914F);
+  static const _muzzleLight = Color(0xFFE7B57E);
+  static const _earLight = Color(0xFFC27433);
+  static const _earBase = Color(0xFFA65625);
+  static const _earDark = Color(0xFF843E17);
+  static const _eye = Color(0xFF2A160C);
+  static const _mouth = Color(0xFF5A2412);
 
   // ---- frame cache --------------------------------------------------------
   // Rocky is ~30 shaded fur shapes. Drawing them every frame is slow on iOS
@@ -407,10 +407,10 @@ class PoodleDrawer {
       ..moveTo(16, -40)
       ..quadraticBezierTo(8, -46, 7 + wag * 0.3, -54 + wag * 0.5);
     c.drawPath(tail, _stroke(_outline, 7));
-    c.drawPath(tail, _stroke(_dark, 4));
+    c.drawPath(tail, _stroke(_dark, 5));
     _fluffy(c, 6 + wag * 0.3, -57 + wag * 0.5, 9.5, 9.5, 11);
     // body
-    _fluffy(c, 37, -34, 26, 18, 21);
+    _fluffy(c, 36, -34, 26, 18, 21);
     c.restore();
 
     // front legs
@@ -419,151 +419,168 @@ class PoodleDrawer {
 
     c.save();
     c.translate(0, bob * 1.2);
-    _fluffy(c, 56, -37, 13, 13, 31); // chest
-    _fluffy(c, 63, -85, 17, 11, 41); // top knot
-    _fluffy(c, 66, -62, 27, 25, 51); // head
-    _fluffy(c, 87, -51, 13, 10, 61,
+    _fluffy(c, 57, -38, 14, 14, 31); // chest
+
+    // far ear (behind the head, right side)
+    c.save();
+    c.translate(90, -70);
+    c.rotate(-earFlap * 0.025);
+    c.translate(-90, 70);
+    _fluffy(c, 95, -57 + earFlap * 0.3, 10, 13, 73,
+        light: _earLight, base: _earBase, dark: _earDark);
+    _fluffy(c, 97, -45 + earFlap * 0.5, 9, 10, 74,
+        light: _earLight, base: _earBase, dark: _earDark);
+    c.restore();
+
+    _fluffy(c, 66, -85, 19, 11, 41); // top knot
+    _fluffy(c, 69, -63, 28, 25, 51); // head, 3/4 view facing the player
+    _fluffy(c, 82, -51, 12, 9, 61,
         light: _muzzleLight, base: _muzzle, dark: _base); // muzzle
 
-    // mouth: open smile with the tongue out
-    if (!dead) {
-      final mouth = Path()
-        ..moveTo(81, -47)
-        ..quadraticBezierTo(89, -36, 98, -47.5)
-        ..quadraticBezierTo(89, -43.5, 81, -47)
-        ..close();
-      c.drawPath(mouth, Paint()..color = _mouth);
-      _oval(c, 89.5, -37.5, 5.2, 7, const Color(0xFFEF7A8A));
-      c.drawLine(const Offset(89.5, -42), const Offset(89.5, -34),
-          _stroke(const Color(0xFFC9566A), 1.1));
+    // eyes (both visible)
+    if (dead) {
+      final x = _stroke(_eye, 2.3);
+      for (final ex in const [71.0, 89.0]) {
+        c.drawLine(Offset(ex - 3.5, -69), Offset(ex + 3.5, -62), x);
+        c.drawLine(Offset(ex + 3.5, -69), Offset(ex - 3.5, -62), x);
+      }
+    } else if (blink) {
+      for (final ex in const [71.0, 89.0]) {
+        c.drawPath(
+            Path()
+              ..moveTo(ex - 4.5, -64)
+              ..quadraticBezierTo(ex, -61, ex + 4.5, -64),
+            _stroke(_eye, 2.1));
+      }
     } else {
-      c.drawPath(
-          Path()
-            ..moveTo(83, -46)
-            ..quadraticBezierTo(89, -49, 95, -46),
-          _stroke(_mouth, 1.8));
+      _drawEye(c, 71, -65.5, 1);
+      _drawEye(c, 89, -65.5, 0.85); // far eye, a little narrower
     }
 
     // nose
-    _oval(c, 96.5, -55.5, 5.8, 4.8, const Color(0xFF3B1D10));
-    _oval(c, 95, -57.4, 2.2, 1.2, const Color(0xB3FFFFFF));
-    // blush
-    _oval(c, 78, -52, 5, 3, const Color(0x61FF828C));
+    _oval(c, 81.5, -56, 5.4, 4.1, const Color(0xFF3E1F10));
+    _oval(c, 80.3, -57.4, 2.1, 1.1, const Color(0x8CFFFFFF));
 
-    // eye: big round brown eye with highlights, soft brow
-    if (dead) {
-      final x = _stroke(_eye, 2.4);
-      c.drawLine(const Offset(70, -69), const Offset(77, -62), x);
-      c.drawLine(const Offset(77, -69), const Offset(70, -62), x);
-    } else if (blink) {
-      c.drawPath(
-          Path()
-            ..moveTo(69, -64)
-            ..quadraticBezierTo(73.5, -61, 78, -64),
-          _stroke(_eye, 2.2));
+    // mouth + tongue out
+    if (!dead) {
+      final mouth = Path()
+        ..moveTo(75, -50.5)
+        ..quadraticBezierTo(81.5, -42, 88, -50.5)
+        ..quadraticBezierTo(81.5, -47.5, 75, -50.5)
+        ..close();
+      c.drawPath(mouth, Paint()..color = _mouth);
+      _oval(c, 81.5, -43.5, 4.4, 6.2, const Color(0xFFE5807C));
+      c.drawLine(const Offset(81.5, -47.5), const Offset(81.5, -40),
+          _stroke(const Color(0xFFC25F60), 1));
     } else {
-      _oval(c, 73.5, -64.5, 7.2, 7.8, _eye);
-      _oval(c, 73.8, -63.6, 5.4, 5.8, const Color(0xFF7A4320)); // iris
-      _oval(c, 73.8, -63.2, 3.2, 3.6, _eye); // pupil
-      c.drawCircle(const Offset(76, -67.6), 2.9, Paint()..color = Colors.white);
-      c.drawCircle(
-          const Offset(71.6, -60.8), 1.3, Paint()..color = const Color(0xE6FFFFFF));
       c.drawPath(
           Path()
-            ..moveTo(68.5, -75.5)
-            ..quadraticBezierTo(73.5, -78, 78.5, -75),
-          _stroke(const Color(0xB36A3B1C), 1.4)); // brow
+            ..moveTo(77, -49)
+            ..quadraticBezierTo(81.5, -51.5, 86, -49),
+          _stroke(_mouth, 1.8));
     }
 
-    // long fluffy ear
+    // blush
+    _oval(c, 64, -54, 4.5, 2.8, const Color(0x4DF0786E));
+    _oval(c, 95, -54, 3.2, 2.4, const Color(0x40F0786E));
+
+    // near ear (long, hangs over the left side of the head)
     c.save();
-    c.translate(55, -72);
+    c.translate(50, -74);
     c.rotate(earFlap * 0.03);
-    c.translate(-55, 72);
-    _fluffy(c, 52, -55 + earFlap * 0.4, 10, 12, 71,
+    c.translate(-50, 74);
+    _fluffy(c, 46, -58 + earFlap * 0.4, 10, 13, 71,
         light: _earLight, base: _earBase, dark: _earDark);
-    _fluffy(c, 51, -45 + earFlap * 0.7, 9, 9, 72,
+    _fluffy(c, 45, -46 + earFlap * 0.7, 9.5, 10, 72,
         light: _earLight, base: _earBase, dark: _earDark);
     c.restore();
 
     c.restore();
+  }
+
+  /// Big round brown eye with highlights; [w] narrows it for the far eye.
+  static void _drawEye(Canvas c, double x, double y, double w) {
+    _oval(c, x, y, 5.6 * w, 6.4, _eye);
+    _oval(c, x + 0.3 * w, y + 0.6, 4.4 * w, 5.0, const Color(0xFF6B4027));
+    _oval(c, x + 0.3 * w, y + 1.0, 2.6 * w, 3.0, const Color(0xFF24130A));
+    c.drawCircle(Offset(x + 1.8 * w, y - 2.4), 2.2, Paint()..color = Colors.white);
+    c.drawCircle(Offset(x - 1.6 * w, y + 2.6), 0.9,
+        Paint()..color = const Color(0xD9FFFFFF));
   }
 
   static void _leg(Canvas c, double x, double swing, double lift, bool front,
       double bob) {
     final top = Offset(x, -24 + bob);
     final foot = Offset(x + swing, -7 - lift);
-    c.drawLine(top, foot, _stroke(_outline, 12));
-    c.drawLine(top, foot, _stroke(front ? _base : _dark, 9.4));
+    c.drawLine(top, foot, _stroke(_outline, 12.5));
+    c.drawLine(top, foot, _stroke(front ? _base : _dark, 10.5));
     _fluffy(c, foot.dx + 1, foot.dy, 8.5, 7, (x * 7).round(),
         light: front ? _light : _base,
         base: front ? _base : _dark,
         dark: front ? _dark : _deep);
   }
 
-  /// Curly poodle fur blob: many small scallops, soft warm outline,
-  /// radial shading and ringlet curls.
+  /// Painted fluffy fur: small scalloped edge, thin soft outline, light from
+  /// the top-left and soft fur tufts (light + shadow dabs).
   static void _fluffy(Canvas c, double cx, double cy, double rx, double ry,
       int seed,
       {Color light = _light, Color base = _base, Color dark = _dark}) {
     final r = _Lcg(seed);
-    final n = max(9, ((rx + ry) * 0.62).round());
-    final br = min(rx, ry) * 0.27 + 1.2;
+    final n = max(10, ((rx + ry) * 0.75).round());
+    final br = min(rx, ry) * 0.22 + 1.4;
     final bumps = <List<double>>[];
     for (var i = 0; i < n; i++) {
-      final a = i / n * pi * 2 + r.next() * 0.25;
+      final a = i / n * pi * 2 + r.next() * 0.22;
       bumps.add([
-        cx + cos(a) * rx * 0.93,
-        cy + sin(a) * ry * 0.93,
-        br * (0.8 + r.next() * 0.4),
+        cx + cos(a) * rx * 0.94,
+        cy + sin(a) * ry * 0.94,
+        br * (0.8 + r.next() * 0.45),
         sin(a),
       ]);
     }
     final outline = Paint()..color = _outline;
     for (final b in bumps) {
-      c.drawCircle(Offset(b[0], b[1]), b[2] + 1.3, outline);
+      c.drawCircle(Offset(b[0], b[1]), b[2] + 1.0, outline);
     }
-    _oval(c, cx, cy, rx * 0.95 + 1.3, ry * 0.95 + 1.3, _outline);
+    _oval(c, cx, cy, rx * 0.96 + 1.0, ry * 0.96 + 1.0, _outline);
     for (final b in bumps) {
       c.drawCircle(Offset(b[0], b[1]), b[2],
-          Paint()..color = Color.lerp(base, dark, max(0.0, b[3]) * 0.6)!);
+          Paint()..color = Color.lerp(base, dark, max(0.0, b[3]) * 0.7)!);
     }
     c.drawOval(
-      Rect.fromCenter(center: Offset(cx, cy), width: rx * 1.9, height: ry * 1.9),
+      Rect.fromCenter(center: Offset(cx, cy), width: rx * 1.92, height: ry * 1.92),
       Paint()
         ..shader = ui.Gradient.radial(
           Offset(cx, cy),
-          max(rx, ry),
-          [light, base, Color.lerp(base, dark, 0.5)!],
-          const [0.0, 0.6, 1.0],
+          max(rx, ry) * 1.05,
+          [light, base, Color.lerp(base, dark, 0.65)!],
+          const [0.0, 0.55, 1.0],
           TileMode.clamp,
           null,
-          Offset(cx - rx * 0.3, cy - ry * 0.35),
+          Offset(cx - rx * 0.32, cy - ry * 0.4),
           0,
         ),
     );
-    // ringlet curls
-    final glow = Paint()..color = const Color(0x38FFE4BE);
-    final curl = _stroke(const Color(0x616E3C19), 1.1);
-    final k = (rx * ry / 75).round();
+    // fur tufts
+    final k = (rx * ry / 45).round();
     for (var i = 0; i < k; i++) {
       final a = r.next() * pi * 2;
-      final d = sqrt(r.next()) * 0.78;
+      final d = sqrt(r.next()) * 0.8;
       final x = cx + cos(a) * rx * d;
       final y = cy + sin(a) * ry * d;
-      final rr = 1.6 + r.next() * 1.4;
-      c.drawCircle(Offset(x, y), rr, glow);
-      c.drawArc(Rect.fromCircle(center: Offset(x, y), radius: rr), 0.2,
-          pi * 1.4, false, curl);
+      final rr = 1.8 + r.next() * 1.8;
+      final lower = sin(a) * d; // lower half darker, upper half lighter
+      c.drawArc(Rect.fromCircle(center: Offset(x, y + rr * 0.35), radius: rr), 0,
+          pi, false,
+          Paint()
+            ..color = Color.fromRGBO(110, 50, 18, 0.10 + 0.14 * max(0.0, lower)));
+      c.drawArc(
+          Rect.fromCircle(center: Offset(x, y - rr * 0.2), radius: rr * 0.8), pi,
+          pi, false,
+          Paint()
+            ..color =
+                Color.fromRGBO(255, 226, 180, 0.10 + 0.16 * max(0.0, -lower)));
     }
-    // top sheen
-    c.save();
-    c.translate(cx - rx * 0.25, cy - ry * 0.45);
-    c.rotate(-0.3);
-    c.drawOval(
-        Rect.fromCenter(center: Offset.zero, width: rx * 0.76, height: ry * 0.4),
-        Paint()..color = const Color(0x40FFECCD));
-    c.restore();
   }
 
   static void _oval(Canvas c, double x, double y, double rx, double ry,
