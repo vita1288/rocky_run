@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import 'game.dart';
+import 'rocky_sprites.dart';
 
 
 class GamePainter extends CustomPainter {
@@ -301,6 +302,7 @@ class PoodleDrawer {
   /// on the spot causes a visible hitch on iOS Safari). Returns true when done.
   static int _warmIndex = 0;
   static bool warmUpStep({int perCall = 3}) {
+    if (RockySprites.ready) return true; // image frames: nothing to pre-draw
     const total = 3 + _runFrames + _idleFrames;
     if (_warmIndex >= total) return true;
     final rec = ui.PictureRecorder();
@@ -334,6 +336,13 @@ class PoodleDrawer {
     required bool idle,
     required double time,
   }) {
+    // Painted image frames (assets/sprites/) replace the drawn Rocky when present.
+    if (RockySprites.ready) {
+      RockySprites.draw(c,
+          phase: phase, running: running, airborne: airborne,
+          dead: dead, idle: idle, time: time);
+      return;
+    }
     late final String key;
     late final void Function(Canvas) paintFrame;
     if (running) {

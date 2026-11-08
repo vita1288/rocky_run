@@ -13,6 +13,7 @@ import 'game_audio.dart';
 import 'pages/how_to_play_page.dart';
 import 'pages/settings_page.dart';
 import 'painters.dart';
+import 'rocky_sprites.dart';
 import 'strings.dart';
 import 'ui/art_icon.dart';
 import 'ui/style.dart';
@@ -79,6 +80,7 @@ class _GameScreenState extends State<GameScreen>
     _game.onGameOver = _handleGameOver;
     _audio.init();
     _ticker = createTicker(_tick)..start();
+    RockySprites.load(); // painted Rocky frames, if added to assets/sprites/
     _loadPrefs().then((_) {
       // How to Play opens every time the game starts.
       if (mounted) _openHowToPlay();
