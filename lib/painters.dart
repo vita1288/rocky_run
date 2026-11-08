@@ -270,15 +270,19 @@ class GamePainter extends CustomPainter {
 class PoodleDrawer {
   static const double scale = 0.95;
 
-  static const _light = Color(0xFFE8875F);
-  static const _base = Color(0xFFBC4A2C);
-  static const _dark = Color(0xFF86301C);
-  static const _deep = Color(0xFF5E1D10);
-  static const _outline = Color(0xFF4A160B);
-  static const _muzzle = Color(0xFFD9744F);
-  static const _muzzleLight = Color(0xFFF0A07A);
-  static const _eye = Color(0xFF1A0D0A);
-  static const _mouth = Color(0xFF3A0D08);
+  // Caramel / apricot toy poodle palette
+  static const _light = Color(0xFFEFC08A);
+  static const _base = Color(0xFFCF8B4E);
+  static const _dark = Color(0xFFA0602F);
+  static const _deep = Color(0xFF74431F);
+  static const _outline = Color(0xFF6A3B1C);
+  static const _muzzle = Color(0xFFE3AE74);
+  static const _muzzleLight = Color(0xFFF6D7AE);
+  static const _earLight = Color(0xFFDDA066);
+  static const _earBase = Color(0xFFBF7B42);
+  static const _earDark = Color(0xFF94592B);
+  static const _eye = Color(0xFF2A1408);
+  static const _mouth = Color(0xFF4A1A0E);
 
   // ---- frame cache --------------------------------------------------------
   // Rocky is ~30 shaded fur shapes. Drawing them every frame is slow on iOS
@@ -404,9 +408,9 @@ class PoodleDrawer {
       ..quadraticBezierTo(8, -46, 7 + wag * 0.3, -54 + wag * 0.5);
     c.drawPath(tail, _stroke(_outline, 7));
     c.drawPath(tail, _stroke(_dark, 4));
-    _fluffy(c, 6 + wag * 0.3, -57 + wag * 0.5, 9, 9, 11);
+    _fluffy(c, 6 + wag * 0.3, -57 + wag * 0.5, 9.5, 9.5, 11);
     // body
-    _fluffy(c, 37, -34, 25, 17, 21);
+    _fluffy(c, 37, -34, 26, 18, 21);
     c.restore();
 
     // front legs
@@ -415,24 +419,23 @@ class PoodleDrawer {
 
     c.save();
     c.translate(0, bob * 1.2);
-    _fluffy(c, 55, -36, 11, 12, 31); // chest
-    _fluffy(c, 64, -84, 13, 11, 41); // top knot
-    _fluffy(c, 66, -62, 25, 23, 51); // head
-    _fluffy(c, 86, -52, 12.5, 9.5, 61,
+    _fluffy(c, 56, -37, 13, 13, 31); // chest
+    _fluffy(c, 63, -85, 17, 11, 41); // top knot
+    _fluffy(c, 66, -62, 27, 25, 51); // head
+    _fluffy(c, 87, -51, 13, 10, 61,
         light: _muzzleLight, base: _muzzle, dark: _base); // muzzle
 
-    // mouth
+    // mouth: open smile with the tongue out
     if (!dead) {
       final mouth = Path()
-        ..moveTo(80, -48)
-        ..quadraticBezierTo(89, -33, 98, -48.5)
-        ..quadraticBezierTo(89, -44.5, 80, -48)
+        ..moveTo(81, -47)
+        ..quadraticBezierTo(89, -36, 98, -47.5)
+        ..quadraticBezierTo(89, -43.5, 81, -47)
         ..close();
       c.drawPath(mouth, Paint()..color = _mouth);
-      c.save();
-      c.clipPath(mouth);
-      _oval(c, 89.5, -38.5, 5.5, 5.5, const Color(0xFFFF6F8E));
-      c.restore();
+      _oval(c, 89.5, -37.5, 5.2, 7, const Color(0xFFEF7A8A));
+      c.drawLine(const Offset(89.5, -42), const Offset(89.5, -34),
+          _stroke(const Color(0xFFC9566A), 1.1));
     } else {
       c.drawPath(
           Path()
@@ -442,55 +445,45 @@ class PoodleDrawer {
     }
 
     // nose
-    _oval(c, 96.5, -56, 6, 4.8, const Color(0xFF140A08));
-    _oval(c, 95, -58, 2.4, 1.3, const Color(0xBFFFFFFF));
+    _oval(c, 96.5, -55.5, 5.8, 4.8, const Color(0xFF3B1D10));
+    _oval(c, 95, -57.4, 2.2, 1.2, const Color(0xB3FFFFFF));
     // blush
-    _oval(c, 79, -53, 4.8, 3, const Color(0x73FF788C));
+    _oval(c, 78, -52, 5, 3, const Color(0x61FF828C));
 
-    // eye
+    // eye: big round brown eye with highlights, soft brow
     if (dead) {
       final x = _stroke(_eye, 2.4);
-      c.drawLine(const Offset(71, -69), const Offset(78, -62), x);
-      c.drawLine(const Offset(78, -69), const Offset(71, -62), x);
+      c.drawLine(const Offset(70, -69), const Offset(77, -62), x);
+      c.drawLine(const Offset(77, -69), const Offset(70, -62), x);
     } else if (blink) {
       c.drawPath(
           Path()
-            ..moveTo(70, -64)
-            ..quadraticBezierTo(74.5, -61, 79, -64),
+            ..moveTo(69, -64)
+            ..quadraticBezierTo(73.5, -61, 78, -64),
           _stroke(_eye, 2.2));
     } else {
-      _oval(c, 74, -65, 6.6, 7.8, _eye);
-      _oval(c, 74, -63.2, 5, 5, const Color(0xFF4A2618));
-      c.drawCircle(const Offset(76.2, -68.4), 2.7, Paint()..color = Colors.white);
+      _oval(c, 73.5, -64.5, 7.2, 7.8, _eye);
+      _oval(c, 73.8, -63.6, 5.4, 5.8, const Color(0xFF7A4320)); // iris
+      _oval(c, 73.8, -63.2, 3.2, 3.6, _eye); // pupil
+      c.drawCircle(const Offset(76, -67.6), 2.9, Paint()..color = Colors.white);
       c.drawCircle(
-          const Offset(71.8, -61.6), 1.3, Paint()..color = const Color(0xE6FFFFFF));
+          const Offset(71.6, -60.8), 1.3, Paint()..color = const Color(0xE6FFFFFF));
+      c.drawPath(
+          Path()
+            ..moveTo(68.5, -75.5)
+            ..quadraticBezierTo(73.5, -78, 78.5, -75),
+          _stroke(const Color(0xB36A3B1C), 1.4)); // brow
     }
 
-    // bandana (mint with white dots)
-    final band = Path()
-      ..moveTo(51, -45)
-      ..quadraticBezierTo(64, -38, 77, -44)
-      ..lineTo(68, -27)
-      ..close();
-    c.drawPath(band, Paint()..color = const Color(0xFF2BB5A0));
-    c.drawPath(band, _stroke(const Color(0xFF17695D), 1.5));
-    for (final d in const [
-      Offset(58, -40),
-      Offset(66, -37),
-      Offset(71, -41),
-      Offset(67, -31),
-      Offset(62, -34),
-    ]) {
-      c.drawCircle(d, 1.3, Paint()..color = const Color(0xFFE9FFF9));
-    }
-
-    // floppy ear
+    // long fluffy ear
     c.save();
-    c.translate(55, -70);
+    c.translate(55, -72);
     c.rotate(earFlap * 0.03);
-    c.translate(-55, 70);
-    _fluffy(c, 52, -56 + earFlap * 0.5, 10, 15, 71,
-        light: _light, base: _base, dark: _dark);
+    c.translate(-55, 72);
+    _fluffy(c, 52, -55 + earFlap * 0.4, 10, 12, 71,
+        light: _earLight, base: _earBase, dark: _earDark);
+    _fluffy(c, 51, -45 + earFlap * 0.7, 9, 9, 72,
+        light: _earLight, base: _earBase, dark: _earDark);
     c.restore();
 
     c.restore();
@@ -500,67 +493,68 @@ class PoodleDrawer {
       double bob) {
     final top = Offset(x, -24 + bob);
     final foot = Offset(x + swing, -7 - lift);
-    c.drawLine(top, foot, _stroke(_outline, 11));
-    c.drawLine(top, foot, _stroke(front ? _base : _dark, 8));
-    _fluffy(c, foot.dx + 1, foot.dy, 8, 6.5, (x * 7).round(),
+    c.drawLine(top, foot, _stroke(_outline, 12));
+    c.drawLine(top, foot, _stroke(front ? _base : _dark, 9.4));
+    _fluffy(c, foot.dx + 1, foot.dy, 8.5, 7, (x * 7).round(),
         light: front ? _light : _base,
         base: front ? _base : _dark,
         dark: front ? _dark : _deep);
   }
 
-  /// Cloud-like fur blob: scalloped outline, soft radial shading, curls, sheen.
+  /// Curly poodle fur blob: many small scallops, soft warm outline,
+  /// radial shading and ringlet curls.
   static void _fluffy(Canvas c, double cx, double cy, double rx, double ry,
       int seed,
       {Color light = _light, Color base = _base, Color dark = _dark}) {
     final r = _Lcg(seed);
-    final n = max(7, ((rx + ry) * 0.42).round());
-    final br = min(rx, ry) * 0.36;
+    final n = max(9, ((rx + ry) * 0.62).round());
+    final br = min(rx, ry) * 0.27 + 1.2;
     final bumps = <List<double>>[];
     for (var i = 0; i < n; i++) {
-      final a = i / n * pi * 2 + r.next() * 0.2;
+      final a = i / n * pi * 2 + r.next() * 0.25;
       bumps.add([
-        cx + cos(a) * rx * 0.9,
-        cy + sin(a) * ry * 0.9,
-        br * (0.85 + r.next() * 0.3),
+        cx + cos(a) * rx * 0.93,
+        cy + sin(a) * ry * 0.93,
+        br * (0.8 + r.next() * 0.4),
         sin(a),
       ]);
     }
     final outline = Paint()..color = _outline;
     for (final b in bumps) {
-      c.drawCircle(Offset(b[0], b[1]), b[2] + 1.6, outline);
+      c.drawCircle(Offset(b[0], b[1]), b[2] + 1.3, outline);
     }
-    _oval(c, cx, cy, rx * 0.95 + 1.6, ry * 0.95 + 1.6, _outline);
+    _oval(c, cx, cy, rx * 0.95 + 1.3, ry * 0.95 + 1.3, _outline);
     for (final b in bumps) {
       c.drawCircle(Offset(b[0], b[1]), b[2],
-          Paint()..color = Color.lerp(base, dark, max(0.0, b[3]) * 0.75)!);
+          Paint()..color = Color.lerp(base, dark, max(0.0, b[3]) * 0.6)!);
     }
-    final body = Rect.fromCenter(
-        center: Offset(cx, cy), width: rx * 1.9, height: ry * 1.9);
     c.drawOval(
-      body,
+      Rect.fromCenter(center: Offset(cx, cy), width: rx * 1.9, height: ry * 1.9),
       Paint()
         ..shader = ui.Gradient.radial(
           Offset(cx, cy),
           max(rx, ry),
-          [light, base, Color.lerp(base, dark, 0.6)!],
-          const [0.0, 0.55, 1.0],
+          [light, base, Color.lerp(base, dark, 0.5)!],
+          const [0.0, 0.6, 1.0],
           TileMode.clamp,
           null,
           Offset(cx - rx * 0.3, cy - ry * 0.35),
           0,
         ),
     );
-    // curls
-    final curl = _stroke(const Color(0x735E1D10), 1.3);
-    final k = (rx * ry / 170).round();
+    // ringlet curls
+    final glow = Paint()..color = const Color(0x38FFE4BE);
+    final curl = _stroke(const Color(0x616E3C19), 1.1);
+    final k = (rx * ry / 75).round();
     for (var i = 0; i < k; i++) {
       final a = r.next() * pi * 2;
-      final d = sqrt(r.next()) * 0.7;
+      final d = sqrt(r.next()) * 0.78;
       final x = cx + cos(a) * rx * d;
       final y = cy + sin(a) * ry * d;
-      final rr = 2.2 + r.next() * 1.5;
-      c.drawArc(Rect.fromCircle(center: Offset(x, y), radius: rr), 0.4,
-          pi * 1.3, false, curl);
+      final rr = 1.6 + r.next() * 1.4;
+      c.drawCircle(Offset(x, y), rr, glow);
+      c.drawArc(Rect.fromCircle(center: Offset(x, y), radius: rr), 0.2,
+          pi * 1.4, false, curl);
     }
     // top sheen
     c.save();
@@ -568,7 +562,7 @@ class PoodleDrawer {
     c.rotate(-0.3);
     c.drawOval(
         Rect.fromCenter(center: Offset.zero, width: rx * 0.76, height: ry * 0.4),
-        Paint()..color = const Color(0x47FFD2B4));
+        Paint()..color = const Color(0x40FFECCD));
     c.restore();
   }
 
