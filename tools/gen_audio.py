@@ -1,222 +1,352 @@
-"""Procedurally generates chiptune SFX + looping BGM for Rocky Run (22.05 kHz, 16-bit mono WAV)."""
-import numpy as np, wave, os, sys
+"""Rocky Run audio generator: modern casual-game style (numpy only).
 
-SR = 22050
-OUT = sys.argv[1] if len(sys.argv) > 1 else "rocky_run/assets/audio"
+Synthesises every sound from scratch, with no samples or downloads:
+  * BGM: a 50-second seamless loop at 116 BPM in C major. Plucked guitar
+    chords, a marimba lead, a warm pad with a gentle sidechain pump, a round
+    bass, punchy kick, clap, shaker and hats, and room reverb.
+  * SFX: soft "boing" jumps, a bell chime for bones, a sparkle arpeggio for
+    milestones, a cute yip on a hit, a wood "bonk" on a crash, a gentle
+    marimba game over and a puppy bark.
+
+Usage:  python tools/gen_audio.py assets/audio
+"""
+import os
+import sys
+import wave
+
+import numpy as np
+
+SR = 32000      # sound effects
+SR_BGM = 22050  # music (keeps the web download small)
+OUT = sys.argv[1] if len(sys.argv) > 1 else "assets/audio"
 os.makedirs(OUT, exist_ok=True)
+RNG = np.random.default_rng(7)
 
 
-def save(name, sig, peak=0.9):
+# ---------------------------------------------------------------- helpers
+def save(name, sig, sr, peak=0.89):
     sig = np.asarray(sig, dtype=np.float64)
-    m = np.max(np.abs(sig)) or 1.0
-    sig = sig / m * peak
-    data = (sig * 32767).astype(np.int16)
+    sig = np.tanh(sig / (np.max(np.abs(sig)) or 1) * 1.15)  # soft limiter
+    sig = sig / (np.max(np.abs(sig)) or 1) * peak
     with wave.open(os.path.join(OUT, name), "wb") as w:
-        w.setnchannels(1); w.setsampwidth(2); w.setframerate(SR)
-        w.writeframes(data.tobytes())
-    print(f"{name}: {len(sig)/SR:.2f}s")
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        w.writeframes((sig * 32767).astype(np.int16).tobytes())
+    print(f"{name:16s} {len(sig) / sr:5.2f}s  {os.path.getsize(os.path.join(OUT, name)) // 1024} KB")
 
 
-def t_of(dur):
-    return np.arange(int(SR * dur)) / SR
+def hz(note):
+    names = {"C": 0, "C#": 1, "D": 2, "D#": 3, "E": 4, "F": 5, "F#": 6, "G": 7,
+             "G#": 8, "A": 9, "A#": 10, "B": 11}
+    return 440.0 * 2 ** ((12 * (int(note[-1]) + 1) + names[note[:-1]] - 69) / 12)
 
 
-def square(freq, dur, duty=0.5):
-    t = t_of(dur)
-    f = np.broadcast_to(freq, t.shape) if np.ndim(freq) else np.full(t.shape, freq)
-    phase = np.cumsum(f) / SR
-    return np.where((phase % 1.0) < duty, 1.0, -1.0)
+def fade(x, sr, ms=15):
+    """Short fade-out at the end so a note never stops with a click."""
+    x = np.array(x, dtype=np.float64)
+    n = min(len(x), int(sr * ms / 1000))
+    if n > 1:
+        x[-n:] *= np.linspace(1, 0, n) ** 2
+    return x
 
 
-def triangle(freq, dur):
-    t = t_of(dur)
-    phase = (freq * t) % 1.0
-    return 4 * np.abs(phase - 0.5) - 1
+def tt(dur, sr):
+    return np.arange(int(dur * sr)) / sr
 
 
-def noise(dur, seed=0):
-    return np.random.default_rng(seed).uniform(-1, 1, int(SR * dur))
-
-
-def env(n, a=0.005, r=0.05, sustain=1.0):
-    e = np.ones(n) * sustain
-    ai = max(1, int(a * SR)); ri = max(1, int(r * SR))
-    e[:ai] = np.linspace(0, sustain, ai)
-    e[-ri:] *= np.linspace(1, 0, ri)
+def adsr(n, sr, a=0.005, d=0.1, s=0.6, r=0.1):
+    e = np.full(n, s)
+    ai, di, ri = int(a * sr), int(d * sr), int(r * sr)
+    ai = max(ai, 1)
+    e[:ai] = np.linspace(0, 1, ai)
+    e[ai:ai + di] = np.linspace(1, s, len(e[ai:ai + di]))
+    if ri:
+        e[-ri:] *= np.linspace(1, 0, min(ri, n))
     return e
 
 
-def sweep(f0, f1, dur, duty=0.5, curve=1.0):
-    n = int(SR * dur)
-    f = f0 + (f1 - f0) * np.linspace(0, 1, n) ** curve
-    return square(f, dur, duty)
+def lowpass(x, sr, cutoff):
+    """Smooth low-pass in the frequency domain (fine for offline audio)."""
+    X = np.fft.rfft(x)
+    f = np.fft.rfftfreq(len(x), 1 / sr)
+    X *= 1 / np.sqrt(1 + (f / cutoff) ** 4)
+    return np.fft.irfft(X, len(x))
 
 
-def note_hz(name):
-    names = {"C": 0, "C#": 1, "D": 2, "D#": 3, "E": 4, "F": 5, "F#": 6, "G": 7, "G#": 8, "A": 9, "A#": 10, "B": 11}
-    pitch, octave = name[:-1], int(name[-1])
-    midi = 12 * (octave + 1) + names[pitch]
-    return 440.0 * 2 ** ((midi - 69) / 12)
+def highpass(x, sr, cutoff):
+    X = np.fft.rfft(x)
+    f = np.fft.rfftfreq(len(x), 1 / sr)
+    X *= 1 / np.sqrt(1 + (cutoff / np.maximum(f, 1)) ** 4)
+    return np.fft.irfft(X, len(x))
 
 
-# ---------------- SFX ----------------
+def reverb(x, sr, size=1.4, mix=0.22, tone=5000, seed=1):
+    """Convolution reverb with a soft, decaying noise tail."""
+    n = int(size * sr)
+    t = np.arange(n) / sr
+    ir = np.random.default_rng(seed).standard_normal(n) * np.exp(-t * 6.5 / size)
+    ir = lowpass(ir, sr, tone)
+    ir[: int(0.012 * sr)] = 0  # pre-delay
+    ir /= np.sqrt(np.sum(ir ** 2))
+    L = len(x) + n
+    wet = np.fft.irfft(np.fft.rfft(x, L) * np.fft.rfft(ir, L), L)
+    out = np.zeros(L)
+    out[: len(x)] += x * (1 - mix)
+    out += wet * mix * 1.6
+    return out
+
+
+# ---------------------------------------------------------------- instruments
+def marimba(f, dur, sr, bright=1.0):
+    t = tt(dur, sr)
+    sig = (np.sin(2 * np.pi * f * t) * np.exp(-t * 5.5)
+           + 0.35 * bright * np.sin(2 * np.pi * f * 3.93 * t) * np.exp(-t * 18)
+           + 0.12 * bright * np.sin(2 * np.pi * f * 9.2 * t) * np.exp(-t * 40))
+    return fade(sig * np.minimum(1, t / 0.002), sr, 30)
+
+
+def bell(f, dur, sr):
+    """Soft FM bell / glockenspiel."""
+    t = tt(dur, sr)
+    mod = np.sin(2 * np.pi * f * 3.5 * t) * 2.2 * np.exp(-t * 6)
+    car = np.sin(2 * np.pi * f * t + mod) * np.exp(-t * 3.2)
+    car += 0.25 * np.sin(2 * np.pi * f * 2 * t) * np.exp(-t * 6)
+    return fade(car * np.minimum(1, t / 0.002), sr, 40)
+
+
+def pluck(f, dur, sr, damp=0.996, bright=0.55):
+    """Karplus-Strong plucked string (nylon guitar / ukulele feel)."""
+    n = int(dur * sr)
+    p = max(2, int(sr / f))
+    buf = RNG.uniform(-1, 1, p)
+    buf = lowpass(np.concatenate([buf, buf]), sr, f * 8 * bright)[:p]
+    out = np.zeros(n)
+    for i in range(n):
+        out[i] = buf[i % p]
+        buf[i % p] = damp * 0.5 * (buf[i % p] + buf[(i + 1) % p])
+    return fade(out, sr, 40)
+
+
+def pad(freqs, dur, sr):
+    t = tt(dur, sr)
+    sig = np.zeros_like(t)
+    for f in freqs:
+        for det in (-0.12, 0.0, 0.12):  # detuned voices
+            ph = 2 * np.pi * f * 2 ** (det / 12) * t + RNG.uniform(0, 6.28)
+            sig += np.sin(ph) + 0.3 * np.sin(2 * ph) + 0.12 * np.sin(3 * ph)
+    return sig * adsr(len(t), sr, a=0.35, d=0.4, s=0.75, r=0.5)
+
+
+def bass(f, dur, sr):
+    t = tt(dur, sr)
+    sig = np.sin(2 * np.pi * f * t) + 0.25 * np.sin(4 * np.pi * f * t)
+    return np.tanh(sig * 1.4) * adsr(len(t), sr, a=0.004, d=0.12, s=0.7, r=0.06)
+
+
+def kick(sr):
+    t = tt(0.32, sr)
+    f = 48 + 120 * np.exp(-t * 28)
+    body = np.sin(2 * np.pi * np.cumsum(f) / sr) * np.exp(-t * 9)
+    click = RNG.standard_normal(len(t)) * np.exp(-t * 400) * 0.25
+    return np.tanh((body + click) * 1.5)
+
+
+def clap(sr):
+    t = tt(0.3, sr)
+    n = highpass(RNG.standard_normal(len(t)), sr, 900)
+    env = np.zeros_like(t)
+    for k, off in enumerate((0, 0.009, 0.018)):  # three quick hand hits
+        i = int(off * sr)
+        env[i:] += np.exp(-(t[: len(t) - i]) * (60 if k < 2 else 14)) * (0.7 if k < 2 else 1)
+    return lowpass(n * env, sr, 7000) * 0.9
+
+
+def hat(sr, open_=False):
+    t = tt(0.25 if open_ else 0.06, sr)
+    n = highpass(RNG.standard_normal(len(t)), sr, 7000)
+    return n * np.exp(-t * (14 if open_ else 70)) * 0.5
+
+
+def shaker(sr):
+    t = tt(0.09, sr)
+    n = highpass(RNG.standard_normal(len(t)), sr, 5000)
+    return n * np.sin(np.pi * np.minimum(1, t / 0.09)) ** 2 * 0.28
+
+
+# ---------------------------------------------------------------- SFX
 def sfx_jump():
-    s = sweep(260, 760, 0.14, duty=0.25, curve=0.6)
-    return s * env(len(s), 0.002, 0.06)
+    t = tt(0.22, SR)
+    f = 330 + 520 * (1 - np.exp(-t * 22))          # quick upward "boing"
+    tone = fade(np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t * 11), SR, 40)
+    whoosh = highpass(RNG.standard_normal(len(t)), SR, 2500) * np.exp(-t * 25) * 0.12
+    return reverb(tone + whoosh, SR, 0.5, 0.12)
 
 
 def sfx_double_jump():
-    a = sweep(480, 1150, 0.10, duty=0.25, curve=0.5)
-    b = sweep(900, 1500, 0.08, duty=0.125)
-    s = np.concatenate([a, b * 0.7])
-    return s * env(len(s), 0.002, 0.05)
+    t = tt(0.3, SR)
+    f = 620 + 900 * (1 - np.exp(-t * 26))
+    tone = fade(np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t * 10), SR, 40)
+    spark = sum(bell(hz(n), 0.3, SR) * 0.25 for n in ("E6", "B6"))
+    return reverb(tone + spark, SR, 0.6, 0.18)
 
 
 def sfx_bone():
-    a = square(note_hz("B5"), 0.06, 0.5) * env(int(SR * 0.06), 0.001, 0.01)
-    b = square(note_hz("E6"), 0.22, 0.5) * env(int(SR * 0.22), 0.001, 0.18)
-    return np.concatenate([a, b])
+    a = bell(hz("E6"), 0.6, SR)
+    b = np.concatenate([np.zeros(int(0.07 * SR)), bell(hz("B6"), 0.53, SR)])
+    sparkle = highpass(RNG.standard_normal(len(a)), SR, 8000) * np.exp(-tt(0.6, SR) * 12) * 0.05
+    return reverb(a * 0.8 + b + sparkle, SR, 0.9, 0.22)
 
 
 def sfx_milestone():
-    parts = []
-    for nm in ["C6", "E6", "G6", "C7"]:
-        d = 0.07
-        parts.append(square(note_hz(nm), d, 0.25) * env(int(SR * d), 0.001, 0.02))
-    last = square(note_hz("C7"), 0.25, 0.25) * env(int(SR * 0.25), 0.001, 0.22) * 0.8
-    return np.concatenate(parts + [last])
-
-
-def sfx_hit():
-    d = 0.35
-    n = noise(d, 3) * np.linspace(1, 0, int(SR * d)) ** 2
-    tone = sweep(420, 70, d, duty=0.5, curve=0.7) * env(int(SR * d), 0.001, 0.15)
-    return 0.6 * n + 0.6 * tone
-
-
-def sfx_game_over():
-    parts = []
-    for nm, d in [("G4", 0.16), ("E4", 0.16), ("C4", 0.16), ("G3", 0.5)]:
-        parts.append(square(note_hz(nm), d, 0.5) * env(int(SR * d), 0.002, d * 0.6))
-    return np.concatenate(parts)
-
-
-def sfx_bark():
-    """Little toy-poodle 'arf!' used on start."""
-    d = 0.16
-    t = t_of(d)
-    f = 820 * np.exp(-t * 6) + 380
-    phase = np.cumsum(f) / SR
-    voiced = np.sin(2 * np.pi * phase) + 0.5 * np.sin(4 * np.pi * phase) + 0.25 * np.sin(6 * np.pi * phase)
-    s = voiced * 0.8 + noise(d, 9) * 0.25
-    e = np.minimum(1, t / 0.008) * np.exp(-t * 14)
-    return np.concatenate([s * e, np.zeros(int(SR * 0.04)), (s * e)[: int(SR * 0.12)] * 0.8])
-
-
-save("jump.wav", sfx_jump())
-save("double_jump.wav", sfx_double_jump())
-save("bone.wav", sfx_bone())
-save("milestone.wav", sfx_milestone())
-save("hit.wav", sfx_hit())
-save("game_over.wav", sfx_game_over())
-save("bark.wav", sfx_bark())
+    out = np.zeros(int(1.3 * SR))
+    for i, n in enumerate(("C6", "E6", "G6", "C7", "E7")):
+        s = bell(hz(n), 0.9, SR) * (0.7 + 0.08 * i)
+        j = int(i * 0.075 * SR)
+        out[j:j + len(s)] += s[: len(out) - j]
+    return reverb(out, SR, 1.2, 0.25)
 
 
 def sfx_hurt():
-    """Lost a heart: short 'yip' + quick down-sweep (softer than the game-over hit)."""
-    d = 0.11
-    t = t_of(d)
-    f = 1300 * np.exp(-t * 9) + 600
-    phase = np.cumsum(f) / SR
-    yip = (np.sin(2 * np.pi * phase) + 0.4 * np.sin(4 * np.pi * phase)) * np.minimum(1, t / 0.005) * np.exp(-t * 16)
-    down = sweep(700, 260, 0.16, duty=0.25, curve=0.8) * env(int(SR * 0.16), 0.002, 0.08) * 0.5
-    return np.concatenate([yip, down])
+    t = tt(0.17, SR)
+    f = 1500 * np.exp(-t * 7) + 650                 # cute "yip"
+    ph = np.cumsum(f) / SR
+    voice = fade((np.sin(2 * np.pi * ph) + 0.45 * np.sin(4 * np.pi * ph)) * np.minimum(1, t / 0.006) * np.exp(-t * 14), SR, 30)
+    thud_t = tt(0.18, SR)
+    thud = fade(np.sin(2 * np.pi * np.cumsum(140 * np.exp(-thud_t * 10) + 60) / SR) * np.exp(-thud_t * 18) * 0.6, SR, 30)
+    sig = np.zeros(int(0.35 * SR))
+    sig[: len(voice)] += voice
+    sig[: len(thud)] += thud
+    return reverb(sig, SR, 0.5, 0.12)
 
 
-save("hurt.wav", sfx_hurt())
-
-# ---------------- BGM ----------------
-BPM = 150
-BEAT = 60 / BPM
-EIGHTH = BEAT / 2
-BARS = 16
-TOTAL = int(round(SR * BEAT * 4 * BARS))
-mix = np.zeros(TOTAL + SR)  # padding, trimmed later
+def sfx_hit():
+    t = tt(0.45, SR)
+    wood = (np.sin(2 * np.pi * 820 * t) * np.exp(-t * 38)
+            + 0.5 * np.sin(2 * np.pi * 1640 * t) * np.exp(-t * 60))   # cartoon "bonk"
+    thud = np.sin(2 * np.pi * np.cumsum(90 + 140 * np.exp(-t * 20)) / SR) * np.exp(-t * 8)
+    dust = lowpass(RNG.standard_normal(len(t)), SR, 1800) * np.exp(-t * 9) * 0.25
+    return reverb(fade(wood * 0.7 + thud + dust, SR, 40), SR, 0.7, 0.15)
 
 
-def place(sig, start_s, gain=1.0):
-    i = int(round(start_s * SR))
-    mix[i:i + len(sig)] += sig * gain
+def sfx_game_over():
+    out = np.zeros(int(2.0 * SR))
+    for i, n in enumerate(("G5", "E5", "C5", "D5", "C5")):
+        d = 0.9 if i == 4 else 0.5
+        s = marimba(hz(n), d, SR) * (1.0 if i < 4 else 1.15)
+        j = int((0.16 * i + (0.1 if i == 4 else 0)) * SR)
+        out[j:j + len(s)] += s[: len(out) - j]
+    out += np.concatenate([np.zeros(int(0.74 * SR)), pad([hz("C4"), hz("E4"), hz("G4")], 1.26, SR) * 0.06])
+    return reverb(out, SR, 1.4, 0.25)
 
 
-# chord progression per bar (roots for bass), C - Am - F - G
-prog = ["C", "A", "F", "G"]
-bass_oct = {"C": "C2", "A": "A1", "F": "F1", "G": "G1"}
-bass_up = {"C": "C3", "A": "A2", "F": "F2", "G": "G2"}
+def sfx_bark():
+    def one(d, f0, seed):
+        t = tt(d, SR)
+        f = f0 * (1 + 0.35 * np.exp(-t * 30)) * (1 - 0.25 * t / d)
+        ph = np.cumsum(f) / SR
+        src = sum(np.sin(2 * np.pi * k * ph) / k for k in range(1, 12))
+        noise = np.random.default_rng(seed).standard_normal(len(t)) * 0.25
+        # formant-ish shaping: puppy "arf"
+        voiced = lowpass(src + noise, SR, 2400) + 0.5 * highpass(lowpass(src, SR, 3200), SR, 1400)
+        return fade(voiced * np.minimum(1, t / 0.008) * np.exp(-t * 16), SR, 25)
+    a = one(0.15, 520, 1)
+    b = one(0.12, 600, 2) * 0.8
+    sig = np.concatenate([a, np.zeros(int(0.05 * SR)), b])
+    return reverb(sig, SR, 0.5, 0.1)
 
-# melody: 8 eighth-notes per bar, '-' = rest, '.' = hold previous
-melA = [
-    "E5 G5 C6 G5 E5 G5 D5 E5",
-    "C5 E5 A5 E5 C5 E5 B4 C5",
-    "A4 C5 F5 C5 A4 C5 G4 A4",
-    "B4 D5 G5 . F5 . D5 B4",
-]
-melB = [
-    "G5 . E5 G5 C6 . B5 A5",
-    "A5 . E5 . C5 D5 E5 .",
-    "F5 . A5 . C6 . A5 F5",
-    "G5 F5 E5 D5 B4 . G4 -",
-]
-melody_bars = melA + melB + melA + [melB[0], melB[1], melB[2], "D5 E5 F5 D5 C5 . . -"]
 
-for bar in range(BARS):
-    bar_t = bar * BEAT * 4
-    root = prog[bar % 4]
-    # bass: octave-bouncing eighths (triangle)
-    for i in range(8):
-        nm = bass_oct[root] if i % 2 == 0 else bass_up[root]
-        d = EIGHTH * 0.9
-        place(triangle(note_hz(nm), d) * env(int(SR * d), 0.003, 0.03), bar_t + i * EIGHTH, 0.55)
-    # lead melody (pulse 25%)
-    tokens = melody_bars[bar].split()
-    i = 0
-    while i < 8:
-        tok = tokens[i]
-        if tok in ("-", "."):
-            i += 1; continue
-        length = 1
-        while i + length < 8 and tokens[i + length] == ".":
-            length += 1
-        d = EIGHTH * length * 0.92
-        n = int(SR * d)
-        tt = np.arange(n) / SR
-        vib = 1 + 0.004 * np.sin(2 * np.pi * 6 * tt) * (tt > 0.12)
-        sig = square(note_hz(tok) * vib, d, 0.25) * env(n, 0.004, 0.04, 1.0) * (0.75 + 0.25 * np.exp(-tt * 8))
-        place(sig, bar_t + i * EIGHTH, 0.22)
-        i += length
-    # arpeggio harmony (soft 12.5% pulse, 16ths) on second half of the song
-    if bar >= 8:
-        chord = {"C": ["C4", "E4", "G4", "C5"], "A": ["A3", "C4", "E4", "A4"], "F": ["F3", "A3", "C4", "F4"], "G": ["G3", "B3", "D4", "G4"]}[root]
-        for k in range(16):
-            d = EIGHTH / 2 * 0.8
-            place(square(note_hz(chord[k % 4]), d, 0.125) * env(int(SR * d), 0.002, 0.03), bar_t + k * EIGHTH / 2, 0.07)
-    # drums
-    for beat in range(4):
-        bt = bar_t + beat * BEAT
-        if beat in (0, 2):  # kick
-            d = 0.14; tt = t_of(d)
-            kick = np.sin(2 * np.pi * np.cumsum(55 + 110 * np.exp(-tt * 35)) / SR) * np.exp(-tt * 18)
-            place(kick, bt, 0.7)
-        if beat in (1, 3):  # snare
-            d = 0.12; tt = t_of(d)
-            place(noise(d, bar * 4 + beat) * np.exp(-tt * 28), bt, 0.28)
-        for h in range(2):  # hats on eighths
-            d = 0.035; tt = t_of(d)
-            hat = np.diff(noise(d + 1 / SR, 100 + bar * 8 + beat * 2 + h)) * np.exp(-tt * 90)
-            place(hat, bt + h * EIGHTH, 0.10)
+# ---------------------------------------------------------------- BGM
+def bgm():
+    sr = SR_BGM
+    bpm = 116
+    beat = 60 / bpm
+    bars = 24
+    total = int(round(bars * 4 * beat * sr))
+    tail = int(2.0 * sr)
+    mix = {k: np.zeros(total + tail) for k in ("drums", "bass", "keys", "lead", "pad")}
 
-# fold the tail past the loop point back to the start for a seamless loop
-tail = mix[TOTAL:]
-mix = mix[:TOTAL].copy()
-mix[: len(tail)] += tail
-save("bgm.wav", mix, peak=0.8)
+    def put(track, s, at, g=1.0):
+        i = int(round(at * sr))
+        s = fade(s, sr, 12)
+        n = min(len(s), len(mix[track]) - i)
+        mix[track][i:i + n] += s[:n] * g
+
+    chords = {  # C - G - Am - F (bright, feel-good)
+        "C": ["C4", "E4", "G4"], "G": ["B3", "D4", "G4"],
+        "Am": ["A3", "C4", "E4"], "F": ["A3", "C4", "F4"],
+    }
+    roots = {"C": "C2", "G": "G2", "Am": "A2", "F": "F2"}
+    prog = ["C", "G", "Am", "F"]
+    # marimba melody: 8 eighth notes per bar ('-' rest, '.' hold)
+    mel_a = ["E5 . G5 . C6 . G5 .", "D5 . G5 . B5 . A5 G5", "C5 . E5 . A5 . G5 E5", "F5 . E5 . D5 . C5 ."]
+    mel_b = ["G5 E5 C5 E5 G5 . C6 .", "B5 . A5 . G5 . D5 .", "A5 G5 E5 . C5 . E5 G5", "A5 . G5 . F5 E5 D5 ."]
+
+    for bar in range(bars):
+        t0 = bar * 4 * beat
+        ch = prog[bar % 4]
+        section = bar // 8  # 0 intro, 1 main, 2 main + counter melody
+        # plucked guitar chord pattern (on 1, &2, 3, &4)
+        for k, off in enumerate((0, 1.5, 2, 3.5)):
+            for j, n in enumerate(chords[ch]):
+                put("keys", pluck(hz(n), 0.9, sr), t0 + off * beat + j * 0.012, 0.22 if k % 2 == 0 else 0.15)
+        # pad from the main section on
+        put("pad", pad([hz(n) for n in chords[ch]], 4 * beat + 0.4, sr), t0,
+            0.05 if section >= 1 else 0.04)
+        # bass: root on 1 and 3, a pickup on &4
+        if True:
+            r = hz(roots[ch])
+            put("bass", bass(r, beat * 0.9, sr), t0, 0.5)
+            put("bass", bass(r, beat * 0.9, sr), t0 + 2 * beat, 0.45)
+            put("bass", bass(r * 2, beat * 0.4, sr), t0 + 3.5 * beat, 0.3)
+        # drums
+        for b in range(4):
+            tb = t0 + b * beat
+            if section >= 1 or bar >= 4:
+                if b in (0, 2) or (b == 3 and bar % 2):
+                    put("drums", kick(sr), tb + (0.5 * beat if b == 3 else 0), 0.8)
+                if b in (1, 3):
+                    put("drums", clap(sr), tb, 0.45)
+            for h in range(2):  # shaker 8ths throughout, hats from main
+                put("drums", shaker(sr), tb + h * beat / 2, 0.6 if h else 0.35)
+                if section >= 1:
+                    put("drums", hat(sr, open_=(h == 1 and b == 3)), tb + h * beat / 2, 0.35)
+        # melodies
+        if section >= 1:
+            tok = (mel_a if section == 1 else mel_b)[bar % 4].split()
+            i = 0
+            while i < 8:
+                if tok[i] in "-.":
+                    i += 1
+                    continue
+                ln = 1
+                while i + ln < 8 and tok[i + ln] == ".":
+                    ln += 1
+                put("lead", marimba(hz(tok[i]), ln * beat / 2 + 0.4, sr), t0 + i * beat / 2, 0.42)
+                if section == 2:  # bell doubling an octave up, very soft
+                    put("lead", bell(hz(tok[i]) * 2, 0.5, sr), t0 + i * beat / 2, 0.06)
+                i += ln
+
+    # sidechain pump on keys + pad (follows the kick on every beat)
+    t = np.arange(total + tail) / sr
+    pump = 1 - 0.35 * np.exp(-(t % beat) * 9)
+    mix["pad"] *= pump
+    mix["keys"] *= 0.85 + 0.15 * pump
+
+    dry = (mix["drums"] * 0.9 + mix["bass"] * 0.9 + mix["keys"] + mix["lead"] + mix["pad"])
+    wet_src = mix["keys"] + mix["lead"] * 1.2 + mix["pad"] + mix["drums"] * 0.15
+    wet = reverb(wet_src, sr, 1.6, 1.0, tone=4500)[: len(dry)] * 0.18
+    song = lowpass(dry + wet, sr, 9500)
+    # seamless loop: fold the tail (reverb / ringing notes) onto the start
+    loop = song[:total].copy()
+    loop[:tail] += song[total:total + tail]
+    return loop, sr
+
+
+if __name__ == "__main__":
+    for name, fn in [("jump", sfx_jump), ("double_jump", sfx_double_jump), ("bone", sfx_bone),
+                     ("milestone", sfx_milestone), ("hurt", sfx_hurt), ("hit", sfx_hit),
+                     ("game_over", sfx_game_over), ("bark", sfx_bark)]:
+        save(f"{name}.wav", fn(), SR)
+    music, sr = bgm()
+    save("bgm.wav", music, sr, peak=0.82)
