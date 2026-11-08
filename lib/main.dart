@@ -15,6 +15,7 @@ import 'pages/settings_page.dart';
 import 'painters.dart';
 import 'rocky_sprites.dart';
 import 'strings.dart';
+import 'web_sfx.dart';
 import 'ui/art_icon.dart';
 import 'ui/style.dart';
 
@@ -66,6 +67,7 @@ class _GameScreenState extends State<GameScreen>
   double _sinceHud = 0;
   Size? _screen; // last screen size applied to the world
   bool _spritesReady = false;
+  bool _paused = false; // run paused (app/tab hidden or Back pressed)
   Duration _last = Duration.zero;
   SharedPreferences? _prefs;
   bool _pageOpen = false; // a How to Play / Settings page is on top
@@ -80,6 +82,9 @@ class _GameScreenState extends State<GameScreen>
     _game.onGameOver = _handleGameOver;
     _audio.init();
     _ticker = createTicker(_tick)..start();
+    // Web: browsers don't always report a hidden tab to Flutter, so listen to
+    // the page's visibility directly (see web/index.html).
+    onPageVisibility((hidden) => hidden ? _goBackground() : null);
     RockySprites.load(); // painted Rocky frames, if added to assets/sprites/
     _loadPrefs().then((_) {
       // How to Play opens every time the game starts.
@@ -89,14 +94,68 @@ class _GameScreenState extends State<GameScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Only pause when the app really goes to the background. `inactive` also
+    // Only react when the app really goes to the background. `inactive` also
     // fires for short interruptions (notification shade, system dialogs), and
     // pausing there made the music stop unexpectedly on Android.
     if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden) {
-      _audio.pauseBgm();
-    } else if (state == AppLifecycleState.resumed && _game.state == GameState.playing) {
-      _audio.startBgm();
+      _goBackground();
     }
+    // On return the run stays paused; the player taps to continue (music too).
+  }
+
+  /// App minimised / tab hidden: stop the music and pause a running game.
+  void _goBackground() {
+    _audio.pauseBgm();
+    if (_game.state == GameState.playing && !_paused) {
+      setState(() => _paused = true);
+    }
+  }
+
+  void _resume() {
+    setState(() => _paused = false);
+    _audio.startBgm();
+    _focus.requestFocus();
+  }
+
+  /// Phone Back button, iPhone swipe-back on the web, or Esc:
+  /// run → pause · paused / game over → title · title → ask before closing.
+  void _onBack() {
+    if (_pageOpen) return;
+    switch (_game.state) {
+      case GameState.playing:
+        if (_paused) {
+          _paused = false;
+          _backToTitle();
+        } else {
+          _goBackground();
+        }
+      case GameState.over:
+        _backToTitle();
+      case GameState.ready:
+        if (!kIsWeb) _confirmExit();
+    }
+  }
+
+  Future<void> _confirmExit() async {
+    final exitNow = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(tr('Exit Rocky Run?', 'Keluar dari Rocky Run?')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(tr('Cancel', 'Batal')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: accentFilled,
+            child: Text(tr('Exit', 'Keluar')),
+          ),
+        ],
+      ),
+    );
+    if (exitNow == true) _exitGame();
+    _focus.requestFocus();
   }
 
   @override
@@ -147,7 +206,7 @@ class _GameScreenState extends State<GameScreen>
     // Allow steps up to 1/15 s so slower devices (e.g. iPhone Safari) keep
     // real-time speed instead of slowing down; longer hitches are capped.
     if (dt > 1 / 15) dt = 1 / 15;
-    if (dt <= 0) return;
+    if (dt <= 0 || _paused) return;
     _game.update(dt);
     // While not running (title, How to Play, game over), prepare Rocky's
     // animation frames a few at a time so jumps never stutter mid-run.
@@ -166,6 +225,7 @@ class _GameScreenState extends State<GameScreen>
       _game.highScore,
       _game.overTime > 0.7,
       _game.hardModeBanner > 0,
+      _paused,
     );
     if (hud != _hudKey || _sinceHud >= 0.1) {
       _hudKey = hud;
@@ -269,6 +329,10 @@ class _GameScreenState extends State<GameScreen>
   // ---------------- input ----------------
 
   void _press() {
+    if (_paused) {
+      _resume(); // the tap only continues; it doesn't also jump
+      return;
+    }
     switch (_game.state) {
       case GameState.playing:
         _game.jump();
@@ -302,7 +366,7 @@ class _GameScreenState extends State<GameScreen>
         return KeyEventResult.handled;
       }
       if (k == LogicalKeyboardKey.escape) {
-        if (_game.state == GameState.over) _backToTitle();
+        _onBack();
         return KeyEventResult.handled;
       }
     }
@@ -322,10 +386,11 @@ class _GameScreenState extends State<GameScreen>
     final playing = _game.state == GameState.playing;
     // Android Back button: during a run or on game over -> back to the title.
     // On the title screen it closes the app as usual.
+    // Never let the system close the game directly; _onBack decides.
     return PopScope(
-      canPop: _game.state == GameState.ready,
+      canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _backToTitle();
+        if (!didPop) _onBack();
       },
       child: Scaffold(
       backgroundColor: Colors.black,
@@ -348,6 +413,7 @@ class _GameScreenState extends State<GameScreen>
                 child: CustomPaint(painter: GamePainter(_game, repaint: _frame)),
               ),
               IgnorePointer(child: _scoreBar(playing)),
+              if (_paused && playing) Positioned.fill(child: _pausedCard()),
               if (_game.hardModeBanner > 0)
                 IgnorePointer(
                   child: Align(
@@ -529,6 +595,30 @@ class _GameScreenState extends State<GameScreen>
           border: Border.all(color: kAccent, width: 3),
         ),
         child: Column(mainAxisSize: MainAxisSize.min, children: children),
+      ),
+    );
+  }
+
+  Widget _pausedCard() {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _resume,
+      child: Container(
+        color: const Color(0x66000000),
+        child: _card(children: [
+          gameLabel(tr('PAUSED', 'JEDA'), 34, color: kPeach),
+          const SizedBox(height: 8),
+          gameLabel(
+              ctl(tr('Tap or press Space to continue', 'Ketuk atau tekan Spasi untuk lanjut'),
+                  tr('Tap to continue', 'Ketuk untuk lanjut')),
+              16),
+          const SizedBox(height: 4),
+          gameLabel(
+              ctl(tr('Esc = back to title', 'Esc = kembali ke menu'),
+                  tr('Back button = back to title', 'Tombol Kembali = kembali ke menu')),
+              13,
+              color: Colors.white70),
+        ]),
       ),
     );
   }

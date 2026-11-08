@@ -115,8 +115,21 @@
         src.start(0);
         return true;
       }
+      // Tab hidden / app minimised: silence sound effects and tell the game
+      // (it pauses the run and the music).
+      function visibility() {
+        var hidden = document.visibilityState === 'hidden';
+        if (ctx) { hidden ? ctx.suspend() : null; }
+        if (typeof window.rrOnVisibility === 'function') window.rrOnVisibility(hidden);
+      }
+      document.addEventListener('visibilitychange', visibility);
+      window.addEventListener('pagehide', function () {
+        if (typeof window.rrOnVisibility === 'function') window.rrOnVisibility(true);
+        if (ctx) ctx.suspend();
+      });
       return { load: load, play: play };
     })();
+    window.rrOnVisibility = null; // set by the game (lib/web_sfx_web.dart)
   </script>
 </head>
 <body>

@@ -22,3 +22,12 @@ bool webSfxPlay(String name, double volume) {
   if (_engine == null) return false;
   return _play(name.toJS, volume.toJS).toDart;
 }
+
+@JS('rrOnVisibility')
+external set _visibilityCallback(JSFunction? f);
+
+/// Calls [cb] with `true` when the browser tab is hidden / minimised,
+/// `false` when it is visible again.
+void onPageVisibility(void Function(bool hidden) cb) {
+  _visibilityCallback = ((JSBoolean hidden) => cb(hidden.toDart)).toJS;
+}
