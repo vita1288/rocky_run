@@ -23,6 +23,10 @@ class GamePainter extends CustomPainter {
           (r.nextDouble() - 0.5) * g.shake);
     }
     _sky(canvas, size);
+    // Hard mode: the sky turns to a warm sunset.
+    if (g.hardMode) {
+      canvas.drawRect(Offset.zero & size, Paint()..color = const Color(0x40FF6A3D));
+    }
     _clouds(canvas, size, g.worldScroll * 0.08);
     _hills(canvas, size, g.worldScroll * 0.15, g.groundY * 0.775, 38, 0.006,
         const Color(0xFFB9A3D6));

@@ -98,6 +98,16 @@ class RockyRunGame {
   int _lastMilestone = 0;
   bool newRecord = false;
 
+  /// From this score on the run gets harder: faster, tighter rock gaps,
+  /// more tall rocks and back-to-back rock combos.
+  static const int hardModeScore = 8000;
+  bool get hardMode => score >= hardModeScore;
+  double _hardTime = 0; // seconds spent in hard mode this run
+  bool _hardAnnounced = false;
+
+  /// Seconds left to show the "HARD MODE!" banner.
+  double hardModeBanner = 0;
+
   void Function(String sfx)? onSfx;
   void Function()? onGameOver;
 
@@ -129,6 +139,9 @@ class RockyRunGame {
     invincible = 0;
     _lastMilestone = 0;
     newRecord = false;
+    _hardTime = 0;
+    _hardAnnounced = false;
+    hardModeBanner = 0;
     _nextRockIn = size.width * 0.6;
     _nextBoneIn = 500;
   }
@@ -191,7 +204,19 @@ class RockyRunGame {
     }
 
     playTime += dt;
-    speed = min(860, 360 + playTime * 9);
+    hardModeBanner = max(0, hardModeBanner - dt);
+    if (hardMode) {
+      if (!_hardAnnounced) {
+        _hardAnnounced = true;
+        hardModeBanner = 2.5;
+        onSfx?.call('bark');
+      }
+      // Hard mode: keep speeding up from 860 to 1080.
+      _hardTime += dt;
+      speed = min(1080, max(860, 360 + playTime * 9) + _hardTime * 6);
+    } else {
+      speed = min(860, 360 + playTime * 9);
+    }
     final dx = speed * dt;
     distance += dx;
     worldScroll += dx;
@@ -217,7 +242,9 @@ class RockyRunGame {
     _nextRockIn -= dx;
     if (_nextRockIn <= 0) {
       _spawnRock();
-      _nextRockIn = speed * (0.85 + rng.nextDouble() * 0.95) + 90;
+      _nextRockIn = hardMode
+          ? speed * (0.72 + rng.nextDouble() * 0.7) + 80 // tighter gaps
+          : speed * (0.85 + rng.nextDouble() * 0.95) + 90;
     }
 
     // bones
@@ -267,8 +294,16 @@ class RockyRunGame {
     final kinds = <RockKind>[RockKind.small, RockKind.small, RockKind.big];
     if (speed > 430) kinds.add(RockKind.pair);
     if (speed > 520) kinds.add(RockKind.tall);
+    if (hardMode) kinds.addAll([RockKind.tall, RockKind.big, RockKind.pair]);
     final kind = kinds[rng.nextInt(kinds.length)];
     rocks.add(Rock(size.width + 20, kind, rng.nextInt(1 << 30)));
+    // Hard mode combo: a second rock right behind the first (35% chance).
+    // Still clearable with one well-timed jump, or a double jump.
+    if (hardMode && rng.nextDouble() < 0.35) {
+      final second = [RockKind.small, RockKind.big][rng.nextInt(2)];
+      rocks.add(Rock(size.width + 20 + speed * 0.42, second, rng.nextInt(1 << 30)));
+      _nextRockIn += speed * 0.42;
+    }
   }
 
   void _hitRock() {

@@ -56,8 +56,8 @@ Seberapa jauh Rocky bisa berlari? Kalahkan skor terbaikmu!
 ## Graphics checklist
 | Asset | Size | Source |
 | --- | --- | --- |
-| App icon | 512 × 512 PNG | resize `assets/icon/rocky_icon_1024.png` |
-| Feature graphic | 1024 × 500 PNG/JPG | to make (Rocky + title on sky background) |
+| App icon | 512 × 512 PNG | `docs/store/icon_512.png` |
+| Feature graphic | 1024 × 500 PNG | `docs/store/feature_graphic_1024x500.png` |
 | Phone screenshots | 2–8, 16:9 or 9:16, min 320 px | take from the release build on a phone |
 
 ## App content answers (Policy → App content)

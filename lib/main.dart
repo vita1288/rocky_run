@@ -1,4 +1,5 @@
 import 'dart:io' show exit;
+import 'dart:math' show max;
 
 import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform;
@@ -162,6 +163,7 @@ class _GameScreenState extends State<GameScreen>
       _game.bonesCollected,
       _game.highScore,
       _game.overTime > 0.7,
+      _game.hardModeBanner > 0,
     );
     if (hud != _hudKey || _sinceHud >= 0.1) {
       _hudKey = hud;
@@ -344,6 +346,15 @@ class _GameScreenState extends State<GameScreen>
                 child: CustomPaint(painter: GamePainter(_game, repaint: _frame)),
               ),
               IgnorePointer(child: _scoreBar(playing)),
+              if (_game.hardModeBanner > 0)
+                IgnorePointer(
+                  child: Align(
+                    alignment: const Alignment(0, -0.35),
+                    child: gameLabel(
+                        tr('HARD MODE!', 'MODE SULIT!'), 34,
+                        color: const Color(0xFFFF6A3D)),
+                  ),
+                ),
               if (!playing)
                 IgnorePointer(
                   ignoring: _game.state != GameState.over,
@@ -448,7 +459,8 @@ class _GameScreenState extends State<GameScreen>
                   height: 1.1,
                   fontWeight: FontWeight.w900,
                   fontFeatures: _tabular)),
-          Text('${tr('BEST', 'TERBAIK')} ${_game.highScore}',
+          // Best updates live once the current run beats it.
+          Text('${tr('BEST', 'TERBAIK')} ${max(_game.highScore, _game.score)}',
               style: const TextStyle(
                   color: kPeach,
                   fontSize: 11,
